@@ -1,7 +1,7 @@
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
-//#include <Adafruit_GFX.h>    // LCD Graphics library
-//#include <gfxfont.h>
+#include "Adafruit_GFX_library/Adafruit_GFX.h"    // LCD Graphics library
+#include "Adafruit_GFX_library/gfxfont.h"
 #include "Adafruit_ST7735.h" // LCD
 #include <SPI.h>                
 #include <OneWire.h>
@@ -63,14 +63,29 @@ bool conn = false;
 int hc74;
 //4. Температуры
 float thatamin, tkotelmin, tkotel, ttt;
-//5. Энкодер
-unsigned long currentTime;
-unsigned long loopTime;
-unsigned char encoder_A;
-unsigned char encoder_B;
-unsigned char encoder_A_prev=0;
-
-
+//5. Дребезг
+volatile int state = LOW;
+//6. Меню
+//Режим редактирования (0-нет, просто выделен определенный параметр или пункт меню, 1-редактируем значение параметра)
+int MenuEdit=0;
+//позиция меню в которой находится выделенный пункт на экране (например на экране отображается 3 пункта при этом выделен второй)
+int MenuDrawPos=0;
+//максимальное количество отображаемых на экране пунктов
+int MenuDrawCount=4;
+//переменные для таймера перерисовки
+//время последней перерисовки
+long DrawTime1=0;
+//текущее время
+long DrawTime2=0;
+//интервал для перерисовки экрана
+long DrawTimeInterval=200000;
+struct MenuStruct{
+  char name[20];
+  uint8_t type;
+  uint8_t parent;
+  uint8_t mode1;//параметр 1
+  uint8_t mode2;//параметр 2
+};
 
 //___________________________________Хардварные функции__________________________
 //Датчики OneWire
@@ -103,6 +118,22 @@ float getTemp(int pin){
   ds.reset_search();
   return round(raw / 1.6)/10;
 } 
+
+void encoder()
+{
+  static unsigned long millis_prev;
+  if(millis()-10 > millis_prev) {
+    if( digitalRead(ENC_B) == HIGH) EncoderPlus();
+    else EncoderMinus();
+  }
+  millis_prev = millis();  
+}
+void EncoderPlus() {
+  
+}
+void EncoderMinus() {
+    
+}
 
 // Соединение с WiFi
 bool ConnectWiFi(const char *ssid, const char *pass) {
@@ -220,6 +251,21 @@ unsigned long sendNTPpacket(IPAddress& address)
   udp.endPacket();
 }
 
+// Инициализация меню
+void MenuSetup() {
+    MenuNowPos=0;
+    MenuStruct Menu[]={
+      { "Сенсоры", 0, 0, 1, 3 },                    //элемент 1
+        { "1 Сенсор", 1, 3, 1, 1},                 //элемент 2
+        { "2 Сенсор", 1, 3, 1, 2},                 //элемент 2
+        { "3 Сенсор", 1, 3, 1, 3},                 //элемент 2
+      { "Температуры", 1, 0, 5, 3},                 //элемент 2
+        { "Котел", 1, 4, 2, 1},                 //элемент 2
+        { "Обратка", 1, 4, 2, 2},                 //элемент 2
+        { "Дом", 1, 4, 2, 3},                 //элемент 2
+    };
+
+}
 
 
  
@@ -231,10 +277,8 @@ void setup() {
   SPI.begin();
   digitalWrite(TFT_CS, HIGH);
   pinMode(ENC_C, INPUT);
-  pinMode(ENC_A, INPUT);
+  attachInterrupt(ENC_A, encoder, RISING);
   pinMode(ENC_B, INPUT);
-  currentTime = millis();
-  loopTime = currentTime;
   pinMode(HC_CS, OUTPUT);
   digitalWrite(HC_CS, LOW);   //Обнуляем сдвиговый регистр!
   SPI.transfer(hc74);            //
@@ -260,30 +304,13 @@ void setup() {
   DiagMsg("КОТЕЛ", ST7735_WHITE, 1, 91);
   DiagMsg("ЦЕНТРОБЕЖКА", ST7735_WHITE, 1, 131);
   digitalWrite(TFT_CS, HIGH);
+  ttt=0;
+  MenuSetup();
 }
  
 void loop() {
-    delay(1000);
-    ttt=getTemp(3);
-    digitalWrite(TFT_CS, LOW);
-    ShPar(ttt,1);
-    digitalWrite(TFT_CS, HIGH);
-    
-currentTime = millis();
-if(currentTime >= (loopTime + 5)){ // проверяем каждые 5мс (200 Гц)
-encoder_A = digitalRead(pin_A); // считываем состояние выхода А энкодера
-encoder_B = digitalRead(pin_B); // считываем состояние выхода А энкодера
-if((!encoder_A) && (encoder_A_prev)){ // если состояние изменилось с положительного к нулю
-if(encoder_B) { // выход В в полож. сост., значит вращение по часовой стрелке
-// увеличиваем яркость, не более чем до 255
-if(brightness + fadeAmount <= 255) brightness += fadeAmount; }
-else { // выход В в 0 сост., значит вращение против часовой стрелки
-// уменьшаем яркость, но не ниже 0
-if(brightness - fadeAmount >= 0) brightness -= fadeAmount; }
-}
-encoder_A_prev = encoder_A; // сохраняем значение А для следующего цикла
-analogWrite(9, brightness); // устанавливаем яркость на 9 ножку
-loopTime = currentTime; }
+    //ttt=getTemp(3);
+    ShPar(ttt,3);  
 
 /*    
     cur_ms       = millis();
